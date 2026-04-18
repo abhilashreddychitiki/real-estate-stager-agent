@@ -1,84 +1,69 @@
-# 🏠 Real Estate Stager Agent
+# Real Estate Stager Agent (Beta Hacks 2026)
 
-> **Beta Hacks 2026** — Send a room photo via iMessage, get back an AI-staged video.
+An AI-driven iMessage agent that transforms photos of empty rooms into professionally staged video walkthroughs using **ByteDance Seedance 2.0**.
 
-An AI-powered real estate staging agent that transforms empty room photos into beautifully staged video walkthroughs using ByteDance Seedance 2.0.
+---
 
-## How It Works
+## 🚀 How it Works
+1. 🏠 **User** sends a photo of an empty room via iMessage.
+2. 🤖 **Agent** acknowledges the message and starts the background pipeline.
+3. 🎨 **Seedance 2.0** generates a high-quality staged video walkthrough.
+4. 🎬 **Agent** sends the final video back to the user via iMessage.
 
-1. 📱 User sends a room photo via iMessage
-2. 🤖 Agent receives it via Photon Spectrum SDK
-3. 🎨 Seedance 2.0 generates a staged video from the image
-4. 🎬 Agent sends the video back via iMessage
+---
 
-## Tech Stack
-
-- **Runtime:** Node.js 20+ with TypeScript
-- **Messaging:** [Photon Spectrum](https://docs.photon.codes) (`spectrum-ts`) for iMessage
+## 🛠 Tech Stack
+- **Runtime:** Node.js 20+ (TypeScript)
+- **Messaging:** [Photon Spectrum](https://docs.photon.codes) (`spectrum-ts`)
 - **AI Video:** ByteDance Seedance 2.0 via Volcengine Ark API
-- **Storage:** [Butterbase](https://docs.butterbase.ai) file storage
-- **Database:** Butterbase PostgreSQL
+- **Storage/DB:** [Butterbase](https://docs.butterbase.ai) (PostgreSQL + File Storage)
 
-## Quick Start
+---
 
+## ⚙️ Setup Instructions
+
+### 1. Butterbase Setup
+Create your app in the [Butterbase Dashboard](https://dashboard.butterbase.ai) and apply the following schema (using the CLI or REST API):
+
+```json
+{
+  "tables": {
+    "staging_jobs": {
+      "columns": {
+        "id":               { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "sender_id":        { "type": "text", "nullable": false },
+        "image_object_id":  { "type": "text" },
+        "video_object_id":  { "type": "text" },
+        "seedance_task_id": { "type": "text" },
+        "status":           { "type": "text", "nullable": false, "default": "'processing'" },
+        "error_message":    { "type": "text" },
+        "created_at":       { "type": "timestamptz", "default": "now()" },
+        "updated_at":       { "type": "timestamptz", "default": "now()" }
+      }
+    }
+  },
+  "name": "create staging_jobs table"
+}
+```
+
+### 2. Environment Variables
+Copy `.env.example` to `.env` and fill in your keys:
+- `PHOTON_PROJECT_ID` / `PHOTON_PROJECT_SECRET` (from Spectrum Dashboard)
+- `BUTTERBASE_APP_ID` / `BUTTERBASE_API_KEY`
+- `ARK_API_KEY` (from Volcengine Ark)
+
+### 3. Installation & Run
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment variables
-cp .env.example .env
-# Fill in your API keys in .env
-
-# Run in development mode
 npm run dev
 ```
 
-## Environment Variables
+---
 
-| Variable | Description |
-|----------|-------------|
-| `PHOTON_PROJECT_ID` | Photon Spectrum project ID |
-| `PHOTON_PROJECT_SECRET` | Photon Spectrum project secret |
-| `BUTTERBASE_APP_ID` | Butterbase app ID |
-| `BUTTERBASE_API_URL` | Butterbase API URL |
-| `BUTTERBASE_API_KEY` | Butterbase service key |
-| `ARK_API_KEY` | Volcengine Ark API key for Seedance |
-| `SEEDANCE_MODEL` | (Optional) Model ID, defaults to `doubao-seedance-2-0-260128` |
+## 🛠 Troubleshooting
 
-## Database Setup
-
-Create the `staging_jobs` table in your Butterbase PostgreSQL:
-
-```sql
-CREATE TABLE staging_jobs (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  sender_id       TEXT NOT NULL,
-  image_object_id TEXT,
-  video_object_id TEXT,
-  seedance_task_id TEXT,
-  status          TEXT NOT NULL DEFAULT 'processing'
-                  CHECK (status IN ('processing', 'succeeded', 'failed')),
-  error_message   TEXT,
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  updated_at      TIMESTAMPTZ DEFAULT now()
-);
-```
-
-## Project Structure
-
-```
-├── main.ts                  # Entry point: Spectrum message loop
-├── lib/
-│   ├── butterbase.ts        # Storage + DB helper
-│   ├── seedance-client.ts   # Volcengine Ark API wrapper
-│   └── prompt-engineer.ts   # Staging prompt builder
-├── types/
-│   └── index.ts             # TypeScript interfaces
-├── .env.example             # Environment variable template
-├── package.json
-└── tsconfig.json
-```
-
-## License
-
-MIT
+### `ENOTFOUND spectrum-cloud.photon.codes`
+If you see this error, your network or firewall is likely blocking the Spectrum SDK from reaching Photon's cloud.
+- **Check DNS:** Run `nslookup spectrum-cloud.photon.codes`.
+- **Firewall:** Ensure your network allows outgoing connections to `*.photon.codes` on port 443.
+- **VPN:** Try disconnecting or using a different network if you are on a restricted corporate VPN.

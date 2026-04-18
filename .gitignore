@@ -1,27 +1,4 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-
-# Environment variables
+node_modules
 .env
-.env.local
-.env.*.local
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Logs
+dist
 *.log
-npm-debug.log*
-
-# TypeScript cache
-*.tsbuildinfo

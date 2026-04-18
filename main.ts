@@ -20,11 +20,16 @@ import { buildStagingPrompt } from './lib/prompt-engineer.js';
 
 // ── Startup ─────────────────────────────────────────────────
 
+console.log('[STAGER] ─────────────────────────────────────────');
 console.log('[STAGER] Real Estate Stager Agent starting...');
+console.log('[STAGER] ─────────────────────────────────────────');
 
 const requiredEnvVars = [
-  'PHOTON_PROJECT_ID', 'PHOTON_PROJECT_SECRET',
-  'BUTTERBASE_APP_ID', 'BUTTERBASE_API_URL', 'BUTTERBASE_API_KEY',
+  'PHOTON_PROJECT_ID',
+  'PHOTON_PROJECT_SECRET',
+  'BUTTERBASE_APP_ID',
+  'BUTTERBASE_API_URL',
+  'BUTTERBASE_API_KEY',
   'ARK_API_KEY',
 ];
 
@@ -39,6 +44,8 @@ console.log('[STAGER] All environment variables present ✓');
 
 // ── Initialize Spectrum ─────────────────────────────────────
 
+console.log('[STAGER] Connecting to Photon Spectrum...');
+
 const app = await Spectrum({
   projectId: process.env.PHOTON_PROJECT_ID!,
   projectSecret: process.env.PHOTON_PROJECT_SECRET!,
@@ -52,14 +59,11 @@ console.log('[STAGER] Spectrum SDK initialized, listening for iMessages... 📱'
 /**
  * Process an incoming room image through the full staging pipeline.
  *
- * This function is intentionally called with `.catch()` (fire-and-forget)
- * so the Spectrum message loop stays responsive while Seedance processes.
+ * This function is called with `.catch()` (fire-and-forget) so the
+ * Spectrum message loop stays responsive while Seedance processes.
  *
- * Pipeline: upload image → insert DB job → Seedance create → poll → download
- * video → upload video → update DB → send reply via iMessage.
- *
- * On any failure, the DB job is marked as 'failed' and the user is
- * notified with a friendly error message.
+ * Pipeline: upload image → insert DB job → Seedance create → poll
+ * → download video → upload video → update DB → send reply.
  *
  * @param space - The Spectrum Space object for sending replies
  * @param senderId - The sender's unique ID from message.sender.id
@@ -139,7 +143,9 @@ async function processImage(
 
     // Notify the user
     try {
-      await space.send("😔 Sorry, we couldn't stage your photo. Please try again with a different room image.");
+      await space.send(
+        "😔 Sorry, we couldn't stage your photo. Please try again with a different room image."
+      );
     } catch (sendErr) {
       console.error(`[STAGER][${senderId}] Failed to send error notification:`, sendErr);
     }
@@ -155,7 +161,10 @@ for await (const [space, message] of app.messages) {
   // Only process attachment messages
   if (message.content.type !== 'attachment') {
     if (message.content.type === 'text') {
-      await space.send("🏠 Hi! Send me a photo of an empty room and I'll create a virtual staging video for you!");
+      console.log(`[STAGER][${senderId}] Text message received, sending instructions`);
+      await space.send(
+        "🏠 Hi! Send me a photo of an empty room and I'll create a virtual staging video for you. Just snap a picture and send it!"
+      );
     }
     continue;
   }
@@ -164,6 +173,7 @@ for await (const [space, message] of app.messages) {
   const { data: imageBuffer, mimeType, name: imageName } = message.content;
 
   if (!mimeType.startsWith('image/')) {
+    console.log(`[STAGER][${senderId}] Non-image attachment: ${mimeType}`);
     await space.send('📷 Please send a photo (JPG, PNG, or HEIC). I can only stage room images!');
     continue;
   }
@@ -173,9 +183,7 @@ for await (const [space, message] of app.messages) {
   // Send immediate acknowledgment
   await space.send('🏠 Got your photo! Staging in progress... This usually takes 1-2 minutes. ⏳');
 
-  // Fire-and-forget with .catch(): process in background so the message loop stays responsive.
-  // The .catch() ensures any unhandled rejection from processImage is logged here,
-  // in addition to the try/catch inside processImage itself (defense in depth).
+  // Fire-and-forget with .catch(): process in background so the message loop stays responsive
   processImage(space, senderId, Buffer.from(imageBuffer), imageName, mimeType)
     .catch((err) => {
       console.error(`[STAGER][${senderId}] Unhandled error in processImage:`, err);
