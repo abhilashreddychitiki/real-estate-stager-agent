@@ -1,0 +1,30 @@
+{
+  "name": "real-estate-stager-agent",
+  "version": "0.1.0",
+  "description": "AI-powered real estate staging agent — send a room photo via iMessage, get back a staged video. Built for Beta Hacks 2026.",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsx watch main.ts",
+    "start": "tsx main.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@butterbase/sdk": "^1.0.0",
+    "spectrum-ts": "^0.1.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

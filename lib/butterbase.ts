@@ -1,0 +1,167 @@
+// ─────────────────────────────────────────────────────────────
+// Butterbase Storage + Database Helper
+// Uses @butterbase/sdk for DB, raw axios for presigned URL flow
+// ─────────────────────────────────────────────────────────────
+
+import { createClient } from '@butterbase/sdk';
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+import type {
+  StagingJob,
+  ButterbaseUploadResponse,
+  ButterbaseDownloadResponse,
+} from '../types/index.js';
+
+// ── Singleton SDK client ────────────────────────────────────
+
+let _client: ReturnType<typeof createClient> | null = null;
+
+function getClient() {
+  if (!_client) {
+    const appId = process.env.BUTTERBASE_APP_ID;
+    const apiUrl = process.env.BUTTERBASE_API_URL;
+    const apiKey = process.env.BUTTERBASE_API_KEY;
+
+    if (!appId || !apiUrl || !apiKey) {
+      throw new Error(
+        '[STAGER][BUTTERBASE] Missing BUTTERBASE_APP_ID, BUTTERBASE_API_URL, or BUTTERBASE_API_KEY'
+      );
+    }
+
+    _client = createClient({ appId, apiUrl, apiKey });
+    console.log('[STAGER][BUTTERBASE] Client initialized for app:', appId);
+  }
+  return _client;
+}
+
+// ── Storage: Presigned URL Upload Flow ──────────────────────
+
+/**
+ * Upload a file buffer to Butterbase storage via the presigned URL flow.
+ * 1. POST /storage/{appId}/upload → get uploadUrl + objectId
+ * 2. PUT buffer to presigned uploadUrl
+ * 3. Return objectId (source of truth — never store URLs)
+ */
+export async function uploadFile(
+  buffer: Buffer,
+  filename: string,
+  contentType: string
+): Promise<{ objectId: string }> {
+  const appId = process.env.BUTTERBASE_APP_ID!;
+  const apiUrl = process.env.BUTTERBASE_API_URL!;
+  const apiKey = process.env.BUTTERBASE_API_KEY!;
+
+  const uniqueFilename = `${uuidv4()}_${filename}`;
+
+  console.log(`[STAGER][STORAGE] Requesting upload URL for: ${uniqueFilename} (${contentType}, ${buffer.length} bytes)`);
+
+  // Step 1: Get presigned upload URL
+  const { data: uploadData } = await axios.post<ButterbaseUploadResponse>(
+    `${apiUrl}/storage/${appId}/upload`,
+    {
+      filename: uniqueFilename,
+      contentType,
+      sizeBytes: buffer.length,
+    },
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }
+  );
+
+  console.log(`[STAGER][STORAGE] Got upload URL, objectId: ${uploadData.objectId}`);
+
+  // Step 2: PUT file bytes to presigned URL
+  await axios.put(uploadData.uploadUrl, buffer, {
+    headers: { 'Content-Type': contentType },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+
+  console.log(`[STAGER][STORAGE] Upload complete: ${uploadData.objectId}`);
+
+  return { objectId: uploadData.objectId };
+}
+
+/**
+ * Get a fresh presigned download URL for a stored object.
+ * Download URLs expire after 1 hour — never cache them.
+ */
+export async function getDownloadUrl(objectId: string): Promise<string> {
+  const appId = process.env.BUTTERBASE_APP_ID!;
+  const apiUrl = process.env.BUTTERBASE_API_URL!;
+  const apiKey = process.env.BUTTERBASE_API_KEY!;
+
+  console.log(`[STAGER][STORAGE] Requesting download URL for objectId: ${objectId}`);
+
+  const { data } = await axios.get<ButterbaseDownloadResponse>(
+    `${apiUrl}/storage/${appId}/download/${objectId}`,
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }
+  );
+
+  console.log(`[STAGER][STORAGE] Download URL obtained (expires in ${data.expiresIn}s)`);
+
+  return data.downloadUrl;
+}
+
+// ── Database: Staging Jobs CRUD ─────────────────────────────
+
+/**
+ * Insert a new staging job row.
+ */
+export async function insertJob(
+  job: Pick<StagingJob, 'sender_id'> & Partial<StagingJob>
+): Promise<StagingJob> {
+  const client = getClient();
+
+  console.log(`[STAGER][DB] Inserting job for sender: ${job.sender_id}`);
+
+  const { data, error } = await client
+    .from<StagingJob>('staging_jobs')
+    .insert({
+      sender_id: job.sender_id,
+      status: 'processing',
+      image_object_id: job.image_object_id ?? null,
+      video_object_id: null,
+      seedance_task_id: null,
+      error_message: null,
+    });
+
+  if (error) {
+    console.error('[STAGER][DB] Insert failed:', error);
+    throw new Error(`DB insert failed: ${JSON.stringify(error)}`);
+  }
+
+  const inserted = Array.isArray(data) ? data[0] : data;
+  console.log(`[STAGER][DB] Job created: ${inserted?.id}`);
+
+  return inserted as StagingJob;
+}
+
+/**
+ * Update an existing staging job row by ID.
+ */
+export async function updateJob(
+  id: string,
+  updates: Partial<Pick<StagingJob, 'status' | 'image_object_id' | 'video_object_id' | 'seedance_task_id' | 'error_message'>>
+): Promise<void> {
+  const client = getClient();
+
+  console.log(`[STAGER][DB] Updating job ${id}:`, updates);
+
+  const { error } = await client
+    .from<StagingJob>('staging_jobs')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error(`[STAGER][DB] Update failed for job ${id}:`, error);
+    throw new Error(`DB update failed: ${JSON.stringify(error)}`);
+  }
+
+  console.log(`[STAGER][DB] Job ${id} updated successfully`);
+}
