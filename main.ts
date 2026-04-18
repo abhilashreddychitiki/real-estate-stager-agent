@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Real Estate Stager Agent — Main Entry Point
+ *
+ * Long-lived Node.js process that listens for iMessage photos via the
+ * Photon Spectrum SDK and generates AI-staged room videos using
+ * ByteDance Seedance 2.0. Built for Beta Hacks 2026.
+ *
+ * Architecture:
+ * - Spectrum async iterator (`for await`) receives [space, message] tuples
+ * - Image attachments are fire-and-forget processed via processImage()
+ * - The message loop is never blocked by video generation (~60-120s)
+ */
+
 import 'dotenv/config';
 import { Spectrum, attachment } from 'spectrum-ts';
 import { imessage } from 'spectrum-ts/providers/imessage';
@@ -36,6 +49,24 @@ console.log('[STAGER] Spectrum SDK initialized, listening for iMessages... 📱'
 
 // ── Background image processing ─────────────────────────────
 
+/**
+ * Process an incoming room image through the full staging pipeline.
+ *
+ * This function is intentionally called with `.catch()` (fire-and-forget)
+ * so the Spectrum message loop stays responsive while Seedance processes.
+ *
+ * Pipeline: upload image → insert DB job → Seedance create → poll → download
+ * video → upload video → update DB → send reply via iMessage.
+ *
+ * On any failure, the DB job is marked as 'failed' and the user is
+ * notified with a friendly error message.
+ *
+ * @param space - The Spectrum Space object for sending replies
+ * @param senderId - The sender's unique ID from message.sender.id
+ * @param imageBuffer - The raw image bytes from message.content.data
+ * @param imageName - Original filename from message.content.name
+ * @param imageMimeType - MIME type from message.content.mimeType
+ */
 async function processImage(
   space: any,
   senderId: string,
@@ -142,6 +173,11 @@ for await (const [space, message] of app.messages) {
   // Send immediate acknowledgment
   await space.send('🏠 Got your photo! Staging in progress... This usually takes 1-2 minutes. ⏳');
 
-  // Fire-and-forget: process in background so the message loop stays responsive
-  void processImage(space, senderId, Buffer.from(imageBuffer), imageName, mimeType);
+  // Fire-and-forget with .catch(): process in background so the message loop stays responsive.
+  // The .catch() ensures any unhandled rejection from processImage is logged here,
+  // in addition to the try/catch inside processImage itself (defense in depth).
+  processImage(space, senderId, Buffer.from(imageBuffer), imageName, mimeType)
+    .catch((err) => {
+      console.error(`[STAGER][${senderId}] Unhandled error in processImage:`, err);
+    });
 }

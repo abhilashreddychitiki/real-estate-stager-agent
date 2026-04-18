@@ -1,7 +1,14 @@
-// ─────────────────────────────────────────────────────────────
-// Seedance 2.0 Client — Volcengine Ark API Wrapper
-// Async task pattern: create → poll → download
-// ─────────────────────────────────────────────────────────────
+/**
+ * @fileoverview Seedance 2.0 Client — Volcengine Ark API Wrapper
+ *
+ * Implements the async task pattern for ByteDance Seedance 2.0:
+ *   1. POST /contents/generations/tasks → create task, get task_id
+ *   2. GET  /contents/generations/tasks/{id} → poll until terminal state
+ *   3. Download the video from the returned video_url
+ *
+ * Base URL: https://ark.cn-beijing.volces.com/api/v3
+ * Auth: Bearer token via ARK_API_KEY environment variable
+ */
 
 import axios, { type AxiosInstance } from 'axios';
 import type { SeedanceTaskCreateRequest, SeedanceTaskResponse } from '../types/index.js';
@@ -12,6 +19,14 @@ const ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 
 let _arkClient: AxiosInstance | null = null;
 
+/**
+ * Get or create the singleton axios instance for Ark API calls.
+ *
+ * Pre-configured with base URL, Bearer auth, and 30s timeout.
+ *
+ * @returns Configured axios instance
+ * @throws {Error} If ARK_API_KEY environment variable is missing
+ */
 function getArkClient(): AxiosInstance {
   if (!_arkClient) {
     const apiKey = process.env.ARK_API_KEY;
@@ -37,7 +52,15 @@ function getArkClient(): AxiosInstance {
 
 /**
  * Submit an image-to-video staging task to Seedance 2.0.
- * Returns the task ID for polling.
+ *
+ * Sends the image URL and staging prompt to the Volcengine Ark API.
+ * The model ID is configurable via the SEEDANCE_MODEL env var,
+ * defaulting to `doubao-seedance-2-0-260128`.
+ *
+ * @param imageUrl - Publicly accessible URL of the room image
+ * @param prompt - The staging prompt (from prompt-engineer.ts)
+ * @returns The task ID string for use with `pollTaskUntilDone()`
+ * @throws {Error} If the API request fails or returns a non-2xx status
  */
 export async function createStagingTask(
   imageUrl: string,
@@ -133,6 +156,12 @@ export async function pollTaskUntilDone(
 
 /**
  * Download the generated video from a Seedance video_url into a Buffer.
+ *
+ * Uses a 60-second timeout and accepts any response size.
+ *
+ * @param videoUrl - The video_url from a succeeded Seedance task response
+ * @returns The video file contents as a Node.js Buffer
+ * @throws {Error} If the download fails or times out
  */
 export async function downloadVideo(videoUrl: string): Promise<Buffer> {
   console.log(`[STAGER][SEEDANCE] Downloading video from: ${videoUrl}`);

@@ -1,7 +1,16 @@
-// ─────────────────────────────────────────────────────────────
-// Butterbase Storage + Database Helper
-// Uses @butterbase/sdk for DB, raw axios for presigned URL flow
-// ─────────────────────────────────────────────────────────────
+/**
+ * @fileoverview Butterbase Storage + Database Helper
+ *
+ * Uses `@butterbase/sdk` for database operations (query builder)
+ * and raw `axios` for the two-step presigned URL storage flow.
+ *
+ * Storage flow (per Butterbase docs):
+ *   1. POST /storage/{appId}/upload → get uploadUrl + objectId
+ *   2. PUT buffer to the presigned uploadUrl
+ *   3. Store objectId (source of truth — never store presigned URLs)
+ *
+ * All functions log with the [STAGER] prefix for Butterbase log debugging.
+ */
 
 import { createClient } from '@butterbase/sdk';
 import axios from 'axios';
@@ -16,6 +25,15 @@ import type {
 
 let _client: ReturnType<typeof createClient> | null = null;
 
+/**
+ * Get or create the singleton Butterbase SDK client.
+ *
+ * Uses `createClient({ appId, apiUrl, apiKey })` with the service key
+ * for full access (no user auth needed for this agent).
+ *
+ * @returns The Butterbase SDK client instance
+ * @throws {Error} If BUTTERBASE_APP_ID, BUTTERBASE_API_URL, or BUTTERBASE_API_KEY is missing
+ */
 function getClient() {
   if (!_client) {
     const appId = process.env.BUTTERBASE_APP_ID;
@@ -38,9 +56,18 @@ function getClient() {
 
 /**
  * Upload a file buffer to Butterbase storage via the presigned URL flow.
- * 1. POST /storage/{appId}/upload → get uploadUrl + objectId
- * 2. PUT buffer to presigned uploadUrl
- * 3. Return objectId (source of truth — never store URLs)
+ *
+ * This is a two-step process per the Butterbase Storage API:
+ * 1. Request a presigned upload URL from `POST /storage/{appId}/upload`
+ * 2. PUT the raw file bytes to the presigned URL
+ *
+ * Files are given a UUID-prefixed filename to avoid collisions.
+ *
+ * @param buffer - The file contents as a Node.js Buffer
+ * @param filename - Original filename (will be prefixed with a UUID)
+ * @param contentType - MIME type (e.g., 'image/jpeg', 'video/mp4')
+ * @returns Object containing the `objectId` — store this, not the URL
+ * @throws {Error} If the presigned URL request or PUT upload fails
  */
 export async function uploadFile(
   buffer: Buffer,
@@ -84,7 +111,13 @@ export async function uploadFile(
 
 /**
  * Get a fresh presigned download URL for a stored object.
- * Download URLs expire after 1 hour — never cache them.
+ *
+ * Per Butterbase docs, download URLs expire after 1 hour.
+ * Always call this fresh when you need a URL — never cache them.
+ *
+ * @param objectId - The object ID returned from `uploadFile()`
+ * @returns A presigned download URL (valid for ~1 hour)
+ * @throws {Error} If the download URL request fails or objectId is invalid
  */
 export async function getDownloadUrl(objectId: string): Promise<string> {
   const appId = process.env.BUTTERBASE_APP_ID!;
@@ -108,7 +141,14 @@ export async function getDownloadUrl(objectId: string): Promise<string> {
 // ── Database: Staging Jobs CRUD ─────────────────────────────
 
 /**
- * Insert a new staging job row.
+ * Insert a new staging job row into the `staging_jobs` table.
+ *
+ * Creates a row with status 'processing' and optional image_object_id.
+ * The returned job includes the generated UUID id.
+ *
+ * @param job - Must include `sender_id`; may include `image_object_id`
+ * @returns The inserted StagingJob row with all fields populated
+ * @throws {Error} If the database insert fails
  */
 export async function insertJob(
   job: Pick<StagingJob, 'sender_id'> & Partial<StagingJob>
@@ -141,6 +181,13 @@ export async function insertJob(
 
 /**
  * Update an existing staging job row by ID.
+ *
+ * Automatically sets `updated_at` to the current timestamp.
+ * Commonly used to update status, attach video_object_id, or record errors.
+ *
+ * @param id - UUID of the job to update
+ * @param updates - Partial fields to update (status, video_object_id, etc.)
+ * @throws {Error} If the database update fails or the job ID is not found
  */
 export async function updateJob(
   id: string,
